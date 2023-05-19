@@ -26,13 +26,14 @@ time.sleep(2)
 category_buttons = driver.find_elements(By.CSS_SELECTOR, ".categories > .mb-5 > button")
 categories = [btn.text for btn in category_buttons]
 
-# GET SUB-CATEGORIES
+# GET SPECIALITIES
 category_dict = dict()
 
 for ctg_btn in category_buttons:
     ctg_btn.click()
-    sub_ctg_a = driver.find_elements(By.CSS_SELECTOR,".categories > .mb-5 > div > div > a")
-    sub_ctg_dict = dict()
-    for a in sub_ctg_a:
-        sub_ctg_dict[a.text] = a.get_attribute("href")
-    category_dict[ctg_btn.text] = sub_ctg_dict
+    speciality_a = driver.find_elements(By.CSS_SELECTOR,".categories > .mb-5 > div > div > a")
+    speciality_dict = dict()
+    for a in speciality_a:
+        speciality_dict[a.text] = a.get_attribute("href")
+    category_dict[ctg_btn.text] = speciality_dict
+
