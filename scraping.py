@@ -2,7 +2,6 @@ from dotenv import dotenv_values
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 
 config = dotenv_values()
 
@@ -28,3 +27,12 @@ category_buttons = driver.find_elements(By.CSS_SELECTOR, ".categories > .mb-5 > 
 categories = [btn.text for btn in category_buttons]
 
 # GET SUB-CATEGORIES
+category_dict = dict()
+
+for ctg_btn in category_buttons:
+    ctg_btn.click()
+    sub_ctg_a = driver.find_elements(By.CSS_SELECTOR,".categories > .mb-5 > div > div > a")
+    sub_ctg_dict = dict()
+    for a in sub_ctg_a:
+        sub_ctg_dict[a.text] = a.get_attribute("href")
+    category_dict[ctg_btn.text] = sub_ctg_dict
