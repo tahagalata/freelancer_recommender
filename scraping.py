@@ -54,54 +54,56 @@ with open("freelancers.csv", "w", newline="") as file:
     for category in category_dict.keys():
         for speciality in category_dict[category].keys():
             driver.get(category_dict[category][speciality])
-            freelancer_divs = driver.find_elements(By.CLASS_NAME, "freelancer-tile")
-            time.sleep(3)
-            for div in freelancer_divs:
-                div.click()
+
+            for i in range(5):
+                freelancer_divs = driver.find_elements(By.CLASS_NAME, "freelancer-tile")
                 time.sleep(3)
+                for div in freelancer_divs:
+                    div.click()
+                    time.sleep(3)
 
-                freelancer_id = id_counter
-                id_counter +=1
+                    freelancer_id = id_counter
+                    id_counter +=1
 
-                location = driver.find_element(By.CLASS_NAME, "location").text
-                success_rate = driver.find_element(By.CSS_SELECTOR, "div div div h3").text
+                    location = driver.find_element(By.CLASS_NAME, "location").text
+                    success_rate = driver.find_element(By.CSS_SELECTOR, "div div div h3").text
+                    
+                    try:
+                        badge = driver.find_elements(By.CSS_SELECTOR, ".identity-badges-container > span ~ span")[0].text
+                    except IndexError:
+                        badge = "None"
+
+                    t_earnings = driver.find_element(By.CSS_SELECTOR, "[data-test=earned-amount-formatted]").text
+                    t_jobs = driver.find_element(By.XPATH, "//small[text()='Total Jobs']//..//..//div[@class='stat-amount']").text
+                    t_hours= driver.find_element(By.XPATH, "//small[text()='Total Hours']//..//..//div[@class='stat-amount']").text
+                    hours_per_week = driver.find_element(By.CSS_SELECTOR, "[data-test=profile-availability] div span").text
+
+                    languages= ""
+                    for element in driver.find_elements(By.CSS_SELECTOR, "li > [data-test=language]"):
+                        if element.text !="":
+                            languages = ",".join([languages, element.text])
+                    languages = languages[1:] #Remove the comma at the beginning
+
+                    profile_title = driver.find_element(By.CLASS_NAME, "pt-lg-5").text
+                    profile_desc = " ".join(driver.find_element(By.CSS_SELECTOR, "span.text-pre-line").text.splitlines())
+                    hourly_rate = driver.find_element(By.CSS_SELECTOR, "span[data-test=hourly-rate]").text
+                    
+                    skills = ""
+                    for element in driver.find_elements(By.CSS_SELECTOR, "span.up-skill-badge"):
+                        if element.text != "":
+                            skills = ",".join([skills, element.text])
+                    skills = skills[1:] #Remove the comma at the beginning
+
+                    driver.find_element(By.CSS_SELECTOR, "button[aria-label='Copy link to clipboard']").click()
+                    win32clipboard.OpenClipboard()
+                    profile_link = win32clipboard.GetClipboardData()
+                    win32clipboard.CloseClipboard()
+
+                    writer.writerow([freelancer_id, location, success_rate,
+                                    badge, t_earnings, t_jobs, t_hours,
+                                    hours_per_week, languages, profile_title,
+                                    profile_desc, hourly_rate, skills, profile_link])
+                    
+                    driver.back()
                 
-                try:
-                    badge = driver.find_elements(By.CSS_SELECTOR, ".identity-badges-container > span ~ span")[0].text
-                except IndexError:
-                    badge = "None"
-
-                t_earnings = driver.find_element(By.CSS_SELECTOR, "[data-test=earned-amount-formatted]").text
-                t_jobs = driver.find_element(By.XPATH, "//small[text()='Total Jobs']//..//..//div[@class='stat-amount']").text
-                t_hours= driver.find_element(By.XPATH, "//small[text()='Total Hours']//..//..//div[@class='stat-amount']").text
-                hours_per_week = driver.find_element(By.CSS_SELECTOR, "[data-test=profile-availability] div span").text
-
-                languages= ""
-                for element in driver.find_elements(By.CSS_SELECTOR, "li > [data-test=language]"):
-                    if element.text !="":
-                        languages = ",".join([languages, element.text])
-                languages = languages[1:] #Remove the comma at the beginning
-
-                profile_title = driver.find_element(By.CLASS_NAME, "pt-lg-5").text
-                profile_desc = " ".join(driver.find_element(By.CSS_SELECTOR, "span.text-pre-line").text.splitlines())
-                hourly_rate = driver.find_element(By.CSS_SELECTOR, "span[data-test=hourly-rate]").text
-                
-                skills = ""
-                for element in driver.find_elements(By.CSS_SELECTOR, "span.up-skill-badge"):
-                    if element.text != "":
-                        skills = ",".join([skills, element.text])
-                skills = skills[1:] #Remove the comma at the beginning
-
-                driver.find_element(By.CSS_SELECTOR, "button[aria-label='Copy link to clipboard']").click()
-                win32clipboard.OpenClipboard()
-                profile_link = win32clipboard.GetClipboardData()
-                win32clipboard.CloseClipboard()
-
-                writer.writerow([freelancer_id, location, success_rate,
-                                badge, t_earnings, t_jobs, t_hours,
-                                hours_per_week, languages, profile_title,
-                                profile_desc, hourly_rate, skills, profile_link])
-
-                break
-            break
-        break
+                driver.find_elements(By.CSS_SELECTOR, "button.up-pagination-item > span")[-1].click()
