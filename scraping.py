@@ -7,9 +7,9 @@ import pandas as pd
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common import NoSuchElementException
+from selenium.common import NoSuchElementException, ElementClickInterceptedException
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support.expected_conditions import element_to_be_clickable
+from selenium.webdriver.support.expected_conditions import element_to_be_clickable, presence_of_element_located, title_contains, number_of_windows_to_be
 
 config = dotenv_values()
 
@@ -126,7 +126,7 @@ def get_freelancer_data(driver, id):
         skills = None
 
     profile_btn = driver.find_element(By.CSS_SELECTOR, "button[aria-label='Copy link to clipboard']")
-    WebDriverWait(driver, timeout=10).until(element_to_be_clickable(profile_btn))
+    wait.until(element_to_be_clickable(profile_btn))
     profile_btn.click()
     
     win32clipboard.OpenClipboard()
@@ -136,11 +136,74 @@ def get_freelancer_data(driver, id):
     return [freelancer_id, location, success_rate, badge, t_earnings, t_jobs, t_hours,
             hours_per_week, languages, profile_title, hourly_rate, skills, profile_link]
 
-def get_jobs_data(driver, freelancer_profile_link):
+def get_jobs_data(driver, freelancer_id, freelancer_profile_link):
     driver.get(freelancer_profile_link)
+    jobs = []
 
+    page_idx = 1
+    comp_jobs_tab_locator = (By.XPATH, "//button[contains(text(),'Completed jobs')]")
+    wait.until(presence_of_element_located(comp_jobs_tab_locator))
+    completed_jobs_num = int(driver.find_element(*comp_jobs_tab_locator).text.split(" ")[-1].strip("()"))
+    total_pages = completed_jobs_num // 10 + 1
+
+    # Store the ID of the original window
+    original_window = driver.current_window_handle
+
+    while True:
+        time.sleep(2)
+        job_links = driver.find_elements(By.CSS_SELECTOR, "#jobs_completed_desktop > div > div > div > div > div > h4 > a")
+        wait.until(element_to_be_clickable(job_links[0]))
+        for link in job_links:
+            try:
+                driver.execute_script("arguments[0].scrollIntoView();", link)
+                link.click()
+            except ElementClickInterceptedException:
+                driver.execute_script("arguments[0].scrollIntoView();", link)
+                link.click()
+            wait.until(presence_of_element_located((By.XPATH, "//h3[contains(text(),'Job Details')]")))
+            try:
+                driver.find_element(By.XPATH, "//p[text()='This job is private']")
+            except NoSuchElementException:
+                job_title = driver.find_element(By.CSS_SELECTOR, "h2.up-modal-title").text
+
+                # Check we don't have other windows open already
+                assert len(driver.window_handles) == 1
+                # Click the link which opens in a new window
+                full_post_link_locator = (By.PARTIAL_LINK_TEXT, "View entire job post")
+                wait.until(presence_of_element_located(full_post_link_locator))
+                driver.find_element(*full_post_link_locator).click()
+                # Wait for the new window or tab
+                wait.until(number_of_windows_to_be(2))
+                # Loop through until we find a new window handle
+                for window_handle in driver.window_handles:
+                    if window_handle != original_window:
+                        driver.switch_to.window(window_handle)
+                        break
+                # Wait for the new tab to finish loading content
+                wait.until(title_contains(job_title))
+
+                #job_description = driver.find_element()
+
+                #jobs.append([freelancer_id, job_title, job_description, hourly_rate, 
+                #             weekly_hours_needed, project_length, experience_level, 
+                #             skills_required, earnings, client_feedback, client_location])
+
+                driver.close()
+                driver.switch_to.window(original_window)
+
+            close_button = driver.find_element(By.XPATH, "//button[contains(text(),'Close')]")
+            wait.until(element_to_be_clickable(close_button))
+            close_button.click()
+        
+        if len(jobs) < 10 and page_idx < total_pages:
+            driver.find_elements(By.CSS_SELECTOR, "li.pagination-link > button")[3].click()
+            page_idx +=1
+        else: break
+                
+    return jobs
 
 driver = initialize_web_driver("127.0.0.1:9014")
+wait = WebDriverWait(driver, 10)
 login(driver, config)
 category_dict = get_categories_and_specialities(driver)
 
@@ -148,12 +211,12 @@ freelancers_csv = "freelancers.csv"
 jobs_csv = "jobs.csv"
 
 # Get Freelancer Data as csv
-id_counter = 2025
+id_counter = 2665
 with open(freelancers_csv, "r+", newline="") as file:
     freelancer_writer = csv.writer(file, delimiter="|")
 
-    for category in list(category_dict.keys())[8:9]:
-        for speciality in list(category_dict[category].keys()):
+    for category in list(category_dict.keys())[11:12]:
+        for speciality in list(category_dict[category].keys())[9:]:
             driver.get(category_dict[category][speciality]) # Opens the link for the list of freelancers for the speciality
 
             time.sleep(3)
