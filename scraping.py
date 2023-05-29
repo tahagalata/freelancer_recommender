@@ -136,7 +136,7 @@ def get_freelancer_data(driver, id):
     return [freelancer_id, location, success_rate, badge, t_earnings, t_jobs, t_hours,
             hours_per_week, languages, profile_title, hourly_rate, skills, profile_link]
 
-def get_jobs_data(driver, freelancer_id, freelancer_profile_link):
+def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
     driver.get(freelancer_profile_link)
     jobs = []
 
@@ -164,7 +164,29 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link):
             try:
                 driver.find_element(By.XPATH, "//p[text()='This job is private']")
             except NoSuchElementException:
+                job_id = job_idx
+                job_idx += 1
+
                 job_title = driver.find_element(By.CSS_SELECTOR, "h2.up-modal-title").text
+
+                earnings_summary = driver.find_elements(By.CSS_SELECTOR, "div.feedback-summary-col > div > div")
+                
+                if "Fixed" in earnings_summary[1].text:
+                    hourly_rate = None
+                    earnings = earnings_summary[0].text.split(" ")[0]
+                else:
+                    hourly_rate = earnings_summary[1].text.split(" ")[0]
+                    earnings = earnings_summary[2].text.split(" ")[0]
+
+                try:
+                    feedback_for_freelancer = float(driver.find_element(By.XPATH, "//span[contains(text() ,'Overall rating')]/following-sibling::span").text)
+                except NoSuchElementException:
+                    feedback_for_freelancer = None
+
+                try:
+                    feedback_for_client = driver.find_element(By.XPATH, "//h3[contains(text(), 'Job Feedback')]//..//div//strong").text
+                except NoSuchElementException:
+                    feedback_for_client = None
 
                 # Check we don't have other windows open already
                 assert len(driver.window_handles) == 1
@@ -182,11 +204,24 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link):
                 # Wait for the new tab to finish loading content
                 wait.until(title_contains(job_title))
 
-                #job_description = driver.find_element()
+                job_description = driver.find_element(By.CLASS_NAME, "job-description").text.replace("\n"," ")
 
-                #jobs.append([freelancer_id, job_title, job_description, hourly_rate, 
-                #             weekly_hours_needed, project_length, experience_level, 
-                #             skills_required, earnings, client_feedback, client_location])
+                weekly_hours_needed = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[0].text.split("\n")[0]
+
+                project_length = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[1].text.split("\n")[0]
+
+                experience_level = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[2].text.split("\n")[0]
+
+                client_location = driver.find_element(By.CSS_SELECTOR, "li[data-qa = 'client-location']").get_attribute("innerText").split("\n")[0]
+
+                skills_required = ""
+                skills_and_categ = driver.find_elements(By.XPATH, "//div[contains(@class, 'group-title')]/parent::div")
+                for categ in skills_and_categ:
+                    skills_required += "/" + categ.text.replace("\n", ",")
+
+                jobs.append([job_id, freelancer_id, job_title, job_description, hourly_rate, 
+                             weekly_hours_needed, project_length, experience_level, skills_required, 
+                             earnings, feedback_for_freelancer, client_location, feedback_for_client])
 
                 driver.close()
                 driver.switch_to.window(original_window)
@@ -194,9 +229,23 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link):
             close_button = driver.find_element(By.XPATH, "//button[contains(text(),'Close')]")
             wait.until(element_to_be_clickable(close_button))
             close_button.click()
+            
+            if len(jobs) >= 10: break
         
-        if len(jobs) < 10 and page_idx < total_pages:
-            driver.find_elements(By.CSS_SELECTOR, "li.pagination-link > button")[3].click()
+        if page_idx < total_pages:
+            next_locator = (By.CSS_SELECTOR, "li.pagination-link > button")
+            pagination_buttons = driver.find_elements(*next_locator)
+            pagination_texts = [button.text for button in pagination_buttons]
+            next_button = pagination_buttons[pagination_texts.index("Next")]
+            wait.until(element_to_be_clickable(next_button))
+
+            try:
+                driver.execute_script("arguments[0].scrollIntoView();", next_button)
+                next_button.click()
+            except ElementClickInterceptedException:
+                driver.execute_script("arguments[0].scrollIntoView();", next_button)
+                next_button.click()
+
             page_idx +=1
         else: break
                 
