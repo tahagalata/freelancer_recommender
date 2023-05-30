@@ -3,11 +3,12 @@ import time
 import csv
 import win32clipboard
 
+import numpy as np
 import pandas as pd
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common import NoSuchElementException, ElementClickInterceptedException
+from selenium.common import NoSuchElementException, ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.expected_conditions import element_to_be_clickable, presence_of_element_located, title_contains, number_of_windows_to_be
 
@@ -141,10 +142,14 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
     jobs = []
 
     page_idx = 1
-    comp_jobs_tab_locator = (By.XPATH, "//button[contains(text(),'Completed jobs')]")
-    wait.until(presence_of_element_located(comp_jobs_tab_locator))
-    completed_jobs_num = int(driver.find_element(*comp_jobs_tab_locator).text.split(" ")[-1].strip("()"))
-    total_pages = completed_jobs_num // 10 + 1
+    try:
+        comp_jobs_tab_locator = (By.XPATH, "//button[contains(text(),'Completed jobs')]")
+        wait.until(presence_of_element_located(comp_jobs_tab_locator))
+    except TimeoutException:
+        return jobs
+    
+    completed_jobs_num = int(driver.find_element(*comp_jobs_tab_locator).text.split(" ")[-1].strip("()").replace(",",""))
+    total_pages = np.ceil(completed_jobs_num / 10)
 
     # Store the ID of the original window
     original_window = driver.current_window_handle
@@ -160,23 +165,36 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
             except ElementClickInterceptedException:
                 driver.execute_script("arguments[0].scrollIntoView();", link)
                 link.click()
-            wait.until(presence_of_element_located((By.XPATH, "//h3[contains(text(),'Job Details')]")))
+            try:
+                wait.until(presence_of_element_located((By.XPATH, "//h3[contains(text(),'Job Details')]")))
+            except TimeoutException:
+                close_button = driver.find_element(By.XPATH, "//button[contains(text(),'Close')]")
+                wait.until(element_to_be_clickable(close_button))
+                close_button.click()
+                continue
             try:
                 driver.find_element(By.XPATH, "//p[text()='This job is private']")
             except NoSuchElementException:
                 job_id = job_idx
-                job_idx += 1
 
                 job_title = driver.find_element(By.CSS_SELECTOR, "h2.up-modal-title").text
 
                 earnings_summary = driver.find_elements(By.CSS_SELECTOR, "div.feedback-summary-col > div > div")
                 
-                if "Fixed" in earnings_summary[1].text:
+                try:
                     hourly_rate = None
-                    earnings = earnings_summary[0].text.split(" ")[0]
-                else:
-                    hourly_rate = earnings_summary[1].text.split(" ")[0]
-                    earnings = earnings_summary[2].text.split(" ")[0]
+                    earnings = None
+                    driver.find_element(By.XPATH, "//strong[contains(text(), 'Private earnings')]")
+                except:
+                    try:
+                        if "Fixed" in earnings_summary[1].text:
+                            hourly_rate = None
+                            earnings = earnings_summary[0].text.split(" ")[0]
+                        else:
+                            hourly_rate = earnings_summary[1].text.split(" ")[0]
+                            earnings = earnings_summary[2].text.split(" ")[0]
+                    except IndexError:
+                        pass
 
                 try:
                     feedback_for_freelancer = float(driver.find_element(By.XPATH, "//span[contains(text() ,'Overall rating')]/following-sibling::span").text)
@@ -192,7 +210,14 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
                 assert len(driver.window_handles) == 1
                 # Click the link which opens in a new window
                 full_post_link_locator = (By.PARTIAL_LINK_TEXT, "View entire job post")
-                wait.until(presence_of_element_located(full_post_link_locator))
+                try:
+                    wait.until(presence_of_element_located(full_post_link_locator))
+                except TimeoutException:
+                    close_button = driver.find_element(By.XPATH, "//button[contains(text(),'Close')]")
+                    wait.until(element_to_be_clickable(close_button))
+                    close_button.click()
+                    continue
+
                 driver.find_element(*full_post_link_locator).click()
                 # Wait for the new window or tab
                 wait.until(number_of_windows_to_be(2))
@@ -206,22 +231,51 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
 
                 job_description = driver.find_element(By.CLASS_NAME, "job-description").text.replace("\n"," ")
 
-                weekly_hours_needed = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[0].text.split("\n")[0]
+                weekly_hours_needed = None
+                project_length = None
+                experience_level = None
 
-                project_length = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[1].text.split("\n")[0]
+                for feature in driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li"):
+                    feature_data = feature.text.split("\n")[0]
+                    if "hrs/week" in feature.text:
+                        weekly_hours_needed = feature_data                        
+                    
+                    if "Project Length" in feature.text:
+                        project_length = feature_data
 
-                experience_level = driver.find_elements(By.CSS_SELECTOR, "ul[data-test= 'job-features'] > li")[2].text.split("\n")[0]
+                    if "looking for" in feature.text:
+                        experience_level = feature_data                     
 
                 client_location = driver.find_element(By.CSS_SELECTOR, "li[data-qa = 'client-location']").get_attribute("innerText").split("\n")[0]
 
                 skills_required = ""
                 skills_and_categ = driver.find_elements(By.XPATH, "//div[contains(@class, 'group-title')]/parent::div")
-                for categ in skills_and_categ:
-                    skills_required += "/" + categ.text.replace("\n", ",")
+                if len(skills_and_categ) > 0:
+                    for categ in skills_and_categ:
+                        skills_required += "/" + categ.text.replace("\n", ",")
+                else:
+                    skills = driver.find_elements(By.CLASS_NAME, "up-skill-badge")
+                    skills = [a.text for a in skills]
+                    skills_required = ",".join(skills)
+
+                profile_btn = driver.find_element(By.CSS_SELECTOR, "button[aria-label='Copy to clipboard']")
+                wait.until(element_to_be_clickable(profile_btn))
+                profile_btn.click()
+                
+                try:
+                    win32clipboard.OpenClipboard()
+                    profile_link = win32clipboard.GetClipboardData()
+                    win32clipboard.CloseClipboard()
+                except:
+                    driver.refresh()
+                    win32clipboard.OpenClipboard()
+                    profile_link = win32clipboard.GetClipboardData()
+                    win32clipboard.CloseClipboard()
+
 
                 jobs.append([job_id, freelancer_id, job_title, job_description, hourly_rate, 
                              weekly_hours_needed, project_length, experience_level, skills_required, 
-                             earnings, feedback_for_freelancer, client_location, feedback_for_client])
+                             earnings, feedback_for_freelancer, client_location, feedback_for_client, profile_link])
 
                 driver.close()
                 driver.switch_to.window(original_window)
@@ -229,20 +283,20 @@ def get_jobs_data(driver, freelancer_id, freelancer_profile_link, job_idx):
             close_button = driver.find_element(By.XPATH, "//button[contains(text(),'Close')]")
             wait.until(element_to_be_clickable(close_button))
             close_button.click()
-            
             if len(jobs) >= 10: break
+
+        if len(jobs) >= 10: break
         
+        print(str(page_idx) + "/" + str(total_pages))
         if page_idx < total_pages:
-            next_locator = (By.CSS_SELECTOR, "li.pagination-link > button")
+            next_locator = (By.CSS_SELECTOR, ".work-history li.pagination-link > button")
             pagination_buttons = driver.find_elements(*next_locator)
             pagination_texts = [button.text for button in pagination_buttons]
             next_button = pagination_buttons[pagination_texts.index("Next")]
-            wait.until(element_to_be_clickable(next_button))
-
             try:
-                driver.execute_script("arguments[0].scrollIntoView();", next_button)
+                wait.until(element_to_be_clickable(next_button))
                 next_button.click()
-            except ElementClickInterceptedException:
+            except (ElementClickInterceptedException):
                 driver.execute_script("arguments[0].scrollIntoView();", next_button)
                 next_button.click()
 
@@ -260,7 +314,7 @@ freelancers_csv = "freelancers.csv"
 jobs_csv = "jobs.csv"
 
 # Get Freelancer Data as csv
-id_counter = 2665
+id_counter = 0
 with open(freelancers_csv, "r+", newline="") as file:
     freelancer_writer = csv.writer(file, delimiter="|")
 
@@ -279,3 +333,17 @@ with open(freelancers_csv, "r+", newline="") as file:
                 freelancer_writer.writerow(freelancer)           
                     
                 driver.back()
+
+# Get Jobs Data as csv
+with open(jobs_csv, "a", newline="") as file:
+    freelancer_profile_df = pd.read_csv("reduced_freelancers.csv", delimiter="|", usecols=["freelancer_id", "profile_link"])
+    job_writer = csv.writer(file, delimiter="|")
+
+    for row in tuple(freelancer_profile_df.iterrows())[266:]:
+        freelancer = row[1]
+
+        freelancer_id = freelancer["freelancer_id"]
+        profile_link = freelancer["profile_link"]
+        jobs = get_jobs_data(driver, freelancer_id, profile_link, 0)
+        job_writer.writerows(jobs)
+        print(f"Finished freelancer: {freelancer_id}")
