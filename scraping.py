@@ -339,7 +339,7 @@ with open(jobs_csv, "a", newline="") as file:
     freelancer_profile_df = pd.read_csv("reduced_freelancers.csv", delimiter="|", usecols=["freelancer_id", "profile_link"])
     job_writer = csv.writer(file, delimiter="|")
 
-    for row in tuple(freelancer_profile_df.iterrows())[356:]:
+    for row in tuple(freelancer_profile_df.iterrows())[424:]:
         freelancer = row[1]
 
         freelancer_id = freelancer["freelancer_id"]
